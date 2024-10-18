@@ -96,7 +96,7 @@ def enregistrer_client():
     conn.close()
     return redirect('/consultation/')  # Rediriger vers la page d'accueil après l'enregistrement
     
-    @app.route('/enregistrer_livre', methods=['GET'])
+@app.route('/enregistrer_livre', methods=['GET'])
 def formulaire_livre():
     return render_template('formulaire-livre.html')  # afficher le formulaire
 
