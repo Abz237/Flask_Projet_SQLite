@@ -8,7 +8,7 @@ CREATE TABLE clients (
 );
 
 DROP TABLE IF EXISTS books;
-CREATE TABLE books (
+CREATE TABLE livre (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT,
     author TEXT,
