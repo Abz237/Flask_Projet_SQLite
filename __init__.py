@@ -15,7 +15,7 @@ def est_authentifie():
 @app.route('/')
 def hello_world():
     return render_template('hello.html')
-
+    
 @app.route('/lecture')
 def lecture():
     if not est_authentifie():
@@ -29,7 +29,7 @@ def lecture():
 def authentification():
     if request.method == 'POST':
         # Vérifier les identifiants
-        if request.form['username'] == 'admin' and request.form['password'] == 'password': # password à cacher par la suite
+        if request.form['username'] == 'admin' and request.form['password'] == 'password1': # password à cacher par la suite
             session['authentifie'] = True
             # Rediriger vers la route lecture après une authentification réussie
             return redirect(url_for('lecture'))
