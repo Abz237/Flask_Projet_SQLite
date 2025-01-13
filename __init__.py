@@ -1,64 +1,86 @@
-from flask import Flask, render_template_string, render_template, jsonify, request, redirect, url_for, session
-from flask import render_template
-from flask import json
-from urllib.request import urlopen
-from werkzeug.utils import secure_filename
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 import sqlite3
 
-app = Flask(__name__)                                                                                                                  
+app = Flask(__name__)
 app.secret_key = b'_5#y2L"F4Q8z\n\xec]/'  # Clé secrète pour les sessions
+ 
+# Définir une clé API pour l'administrateur
+ADMIN_API_KEY = "votre_cle_secrete"
 
-# Fonction pour créer une clé "authentifie" dans la session utilisateur
-def est_authentifie():
-    return session.get('authentifie')
+# Fonction pour vérifier si l'administrateur est authentifié
+def admin_authentifie():
+    return session.get('authentifie') or request.headers.get('X-API-KEY') == ADMIN_API_KEY
 
-def user():
-    return session.get('user_A')
+# Fonction pour vérifier si un utilisateur est authentifié
+def user_authentifie():
+    return session.get('authentification_utilisateur')
 
 @app.route('/')
 def hello_world():
     return render_template('hello.html')
-
-@app.route('/lecture')
-def lecture():
-    if est_authentifie():
-        return "<h1>Bonjour Administrateur</h1>"
-    elif user():
-        return "<h1>Bonjour Utilisateur</h1>"
-    else:
-        return redirect(url_for('authentification'))
-
-  # Si l'utilisateur est authentifié
-    return "<h2>Bravo, vous êtes authentifié</h2>"
+ 
 
 @app.route('/authentification', methods=['GET', 'POST'])
 def authentification():
     if request.method == 'POST':
-        # Vérifier les identifiants
-        if request.form['username'] == 'admin' and request.form['password'] == 'password': # password à cacher par la suite
+        if request.form['username'] == 'admin' and request.form['password'] == 'password':  # password à cacher
             session['authentifie'] = True
-            session['user_A'] = False
-            # Rediriger vers la route lecture après une authentification réussie
+            session['authentification_utilisateur'] = False
             return redirect(url_for('lecture'))
-        elif request.form['username'] == 'user' and request.form['password'] == '12345':
-            session['user_A'] = True
+        elif request.form['username'] == 'user' and request.form['password'] == '12345':  # password à cacher
+            session['authentification_utilisateur'] = True
             session['authentifie'] = False
             return redirect(url_for('lecture'))
         else:
-            # Afficher un message d'erreur si les identifiants sont incorrects
             return render_template('formulaire_authentification.html', error=True)
-
     return render_template('formulaire_authentification.html', error=False)
 
-@app.route('/fiche_client/<int:post_id>')
-def Readfiche(post_id):
+@app.route('/lecture')
+def lecture():
+    if admin_authentifie():
+        return "<h1>Bonjour, vous êtes connecté en tant qu'administrateur</h1>"
+    if user_authentifie():
+        return "<h1>Bonjour, vous êtes connecté à votre espace utilisateur</h1>"
+    else:
+        return redirect(url_for('authentification'))
+
+@app.route('/ajouter_client', methods=['POST'])
+def ajouter_client():
+    if not admin_authentifie():
+        return jsonify({'error': 'Non autorisé'}), 403
+
+    data = request.json
+    nom = data.get('nom')
+    prenom = data.get('prenom')
+    adresse = data.get('adresse')
+
+    if not nom or not prenom or not adresse:
+        return jsonify({'error': 'Les champs nom, prenom et adresse sont obligatoires'}), 400
+
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM clients WHERE id = ?', (post_id,))
-    data = cursor.fetchall()
+
+    # Trouver le premier ID manquant
+    cursor.execute('SELECT id + 1 FROM clients c WHERE NOT EXISTS (SELECT 1 FROM clients WHERE id = c.id + 1) LIMIT 1')
+    missing_id = cursor.fetchone()
+
+    if missing_id and missing_id[0]:
+        new_id = missing_id[0]
+        cursor.execute(
+            'INSERT INTO clients (id, nom, prenom, adresse) VALUES (?, ?, ?, ?)',
+            (new_id, nom, prenom, adresse)
+        )
+    else:
+        cursor.execute(
+            'INSERT INTO clients (nom, prenom, adresse) VALUES (?, ?, ?)',
+            (nom, prenom, adresse)
+        )
+
+    conn.commit()
     conn.close()
-    # Rendre le template HTML et transmettre les données
-    return render_template('read_data.html', data=data)
+
+    return jsonify({'message': 'Client ajouté avec succès'}), 201
+
 
 @app.route('/consultation/')
 def ReadBDD():
@@ -69,165 +91,47 @@ def ReadBDD():
     conn.close()
     return render_template('read_data.html', data=data)
 
-@app.route('/enregistrer_client', methods=['GET'])
-def formulaire_client():
-    return render_template('formulaire.html')  # afficher le formulaire
+# Route pour supprimer un client
+@app.route('/supprimer_client/<int:client_id>', methods=['DELETE'])
+def supprimer_client(client_id):
+    if not admin_authentifie():  # Vérifie si l'utilisateur est admin via clé API ou session
+        return jsonify({'error': 'Non autorisé'}), 403
 
-@app.route('/enregistrer_client', methods=['POST'])
-def enregistrer_client():
-    nom = request.form['nom']
-    prenom = request.form['prenom']
-
-    # Connexion à la base de données
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
+    cursor.execute('SELECT * FROM clients WHERE id = ?', (client_id,))
+    client_data = cursor.fetchone()
 
-    # Exécution de la requête SQL pour insérer un nouveau client
-    cursor.execute('INSERT INTO clients (nom, prenom, adresse) VALUES (?, ?, ?)', (nom, prenom, "ICI"))
+    if not client_data:
+        conn.close()
+        return jsonify({'error': f'Client avec l\'ID {client_id} non trouvé'}), 404
+
+    cursor.execute('DELETE FROM clients WHERE id = ?', (client_id,))
     conn.commit()
     conn.close()
-    return redirect('/consultation/')  # Rediriger vers la page d'accueil après l'enregistrement
 
-@app.route('/supprimer_client/<int:id>')
-def supprimer_client(id):
+    return jsonify({'message': f'Client avec l\'ID {client_id} supprimé avec succès'}), 200
+
+# API consultation détaillée : Récupérer un client par ID
+@app.route('/fiche_client/<int:post_id>', methods=['GET'])
+def fiche_client(post_id):
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
-
-    cursor.execute('DELETE FROM clients WHERE id = ?', (id,))
-    conn.commit()
-    conn.close()
-    return redirect('/consultation/')
-
-@app.route('/supprimer_client/<string:nom>')
-def supprimer_clientN(nom):
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-
-    cursor.execute('DELETE FROM clients WHERE nom = ?', (nom,))
-    conn.commit()
-    conn.close()
-    return redirect('/consultation/')
-
-
-@app.route('/fiche_nom/<string:nom>')
-def fiche_nom(nom):
-    if user():
-        conn = sqlite3.connect('database.db')
-        cursor = conn.cursor()
-
-        cursor.execute('SELECT * FROM clients WHERE nom = ?', (nom,))
-        data = cursor.fetchall()
-        conn.close
-        return render_template('read_data.html', data=data)
-    else:
-        return '<h1>non identifié</h1>'
-
-
-@app.route('/consultation_livre/')
-def BDD_livre():
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM livres;')
-    data = cursor.fetchall()
-    conn.close()
-    return render_template('read_livre.html', data=data)
-
-@app.route('/enregistrer_livre', methods=['GET'])
-def formulaire_livre():
-    return render_template('formulaire_livre.html')  # afficher le formulaire
-
-@app.route('/enregistrer_livre', methods=['POST'])
-def enregistrer_livre():
-    nom = request.form['nom']
-    auteur = request.form['auteur']
-
-    # Connexion à la base de données
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-
-    # Exécution de la requête SQL pour insérer un nouveau livre ou incrémenter de 1 le compte si existant
-    cursor.execute('SELECT * FROM livres WHERE nom = ? AND auteur = ?', (nom,auteur,))
+    cursor.execute('SELECT * FROM clients WHERE id = ?', (post_id,))
     data = cursor.fetchone()
-    if data == None:
-        cursor.execute('INSERT INTO livres (nom,auteur) VALUES (?,?)', (nom,auteur))
+    conn.close()
+
+    if data:
+        client = {
+            'id': data[0],
+            'created': data[1],
+            'nom': data[2],
+            'prenom': data[3],
+            'adresse': data[4]
+        }
+        return jsonify(client), 200
     else:
-        cursor.execute('UPDATE livres SET quantite = quantite+1 WHERE nom = ? AND auteur = ?', (nom,auteur,))
-    conn.commit()
-    conn.close()
-    return redirect('/consultation_livre/')
+        return jsonify({'error': f'Client avec l\'ID {post_id} non trouvé'}), 404
 
-@app.route('/supprimer_livre/<int:id>')
-def supprimer_livre(id):
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-
-    cursor.execute('DELETE FROM livres WHERE id = ?', (id,))
-    conn.commit()
-    conn.close()
-    return redirect('/consultation_livre/')
-
-@app.route('/fiche_livre_id/<int:post_id>')
-def fiche_livre_id(post_id):
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM livres WHERE id = ?', (post_id,))
-    data = cursor.fetchall()
-    conn.close()
-    return render_template('read_livre.html', data=data)
-
-@app.route('/fiche_livre_nom/<string:nom>')
-def fiche_livre_nom(nom):
-    if user():
-        conn = sqlite3.connect('database.db')
-        cursor = conn.cursor()
-
-        cursor.execute('SELECT * FROM clients WHERE nom = ?', (nom,))
-        data = cursor.fetchall()
-        conn.close
-        return render_template('read_livre.html', data=data)
-    else:
-        return '<h1>non identifié</h1>'
-
-
-
-@app.route('/consultation_emprunts/')
-def BDD_emprunt():
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM emprunts;')
-    data = cursor.fetchall()
-    conn.close()
-    return render_template('read_emprunt.html', data=data)
-
-@app.route('/enregistrer_emprunt', methods=['GET'])
-def formulaire_emprunt():
-    return render_template('formulaire_emprunt.html')  # afficher le formulaire
-
-@app.route('/enregistrer_emprunt', methods=['POST'])
-def enregistrer_emprunt():
-    id_client = request.form['id_client']
-    id_livre = request.form['id_livre']
-
-    # Connexion à la base de données
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-
-    # Exécution de la requête SQL pour insérer un nouveau client
-    cursor.execute('INSERT INTO emprunts (id_client,id_livre) VALUES (?,?)', (id_client,id_livre,))
-    conn.commit()
-    conn.close()
-    return redirect('/consultation_emprunts/')
-
-@app.route('/retour/<int:id>')
-def retour(id):
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-
-    # Exécution de la requête SQL pour insérer un nouveau client
-    cursor.execute('UPDATE emprunts SET date_fin = CURRENT_TIMESTAMP WHERE id = ?', (id,))
-    conn.commit()
-    conn.close()
-    return redirect('/consultation_emprunts/')
-                                                                                                                                       
-if __name__ == "__main__":
-  app.run(debug=True)
+if __name__ == '__main__':
+    app.run(debug=True)
