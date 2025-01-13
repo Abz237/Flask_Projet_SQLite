@@ -1,3 +1,33 @@
 <!doctype html>
+
+<head>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
 <title>Flask Server</title>
-<h1> Hello from Flask Server !</h1>
+<p id="barre"></p>
+<h1> Bienvenue! !</h1><br>
+<h2>Liste des commandes :</h2>
+<div>
+  <br>
+  <p>{URL}/authentification</p>
+  <p>{URL}/deconnexion</p><br>
+  
+  <h3>Gestion client:</h3>
+  <p>{URL}/consultation</p>
+  <p>{URL}/fiche_client/{id_client}</p>
+  <p>{URL}/fiche_nom/{nom_client}</p>
+  <p>{URL}/enregistrer_client</p>
+  <p>{URL}/supprimer_client</p><br>
+
+  <h3>Gestion librairie:</h3>
+  <p>{URL}/consultation_livre</p>
+  <p>{URL}/fiche_livre_id/{id_livre}</p>
+  <p>{URL}/fiche_livre_nom/{nom_livre}</p>
+  <p>{URL}/enregistrer_livre</p>
+  <p>{URL}/supprimer_livre/{id_livre}</p><br>
+
+  <h3>Gestion des emprunts:</h3>
+  <p>{URL}/consultation_emprunts</p>
+  <p>{URL}/enregistrer_emprunt</p>
+  <p>{URL}/retour/{id_emprunt}</p>
+</div>
